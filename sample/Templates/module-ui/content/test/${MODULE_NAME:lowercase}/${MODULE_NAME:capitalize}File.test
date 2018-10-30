@@ -1,0 +1,5 @@
+package ${PACKAGE}
+
+class ${MODULE_NAME:capitalize}Class {
+
+}
