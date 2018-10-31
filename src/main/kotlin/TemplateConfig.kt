@@ -10,7 +10,7 @@ import kotlinx.serialization.Optional
  */
 
 @Serializable
-data class ModuleConfig(
+data class TemplateConfig(
     @SerialName("description")
     val description: String,
     @SerialName("path")
@@ -22,7 +22,7 @@ data class ModuleConfig(
 )
 
 @Serializable
-data class RootConfig(
+data class AppConfig(
     @SerialName("values")
     val values: Map<String, String>,
     @SerialName("variables")

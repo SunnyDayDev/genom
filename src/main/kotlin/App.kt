@@ -1,7 +1,6 @@
 package me.sunnydaydev.genom
 
 import kotlinx.serialization.json.JSON
-import java.io.File
 import java.lang.Error
 
 /**
@@ -13,102 +12,151 @@ fun main(args: Array<String>) {
 
     val json = JSON(strictMode = false)
 
-    val rootDir = File("./")
-    val globalConfig: RootConfig = json.parse(RootConfig.serializer(), File(rootDir, "config.json").readText())
+    val appConfig: AppConfig = json.parse(AppConfig.serializer(), Files.rootConfig.readText())
+    val files = Files(appConfig)
+    val templateResolver = TemplateResolver(appConfig, json, files)
 
-    val temlatesDir = File(globalConfig.templatesPath)
+    val argsResolver = ArgsResolver(args)
 
-    val module = if (args.isEmpty()) {
+    App(argsResolver, templateResolver).run()
 
-        val modules = temlatesDir.listFiles()
-            .filter { it.isDirectory }
-            .mapNotNull {
-                val configFile = File(it, "config.json")
-                it to json.parse(ModuleConfig.serializer(), configFile.readText())
+}
+
+class App(
+    private val argsResolver: ArgsResolver,
+    private val templateResolver: TemplateResolver
+) {
+
+    private var nextAction: Action = handleArgs()
+
+    fun run() {
+
+        while (nextAction.canExecute) {
+            nextAction.execute()
+        }
+
+        /*
+        if (config.variables.isNotEmpty()) {
+
+            config.variables.forEach {
+
+                val consoleValue = consoleKeyInput[it.consoleKey]
+
+                if (consoleValue != null) {
+
+                    variableValues[it.name] = consoleValue
+
+                } else {
+
+                    print("${it.description}: ")
+                    variableValues[it.name] = readLine()!!
+
+                }
+
             }
 
-        modules
-            .mapIndexed { i, (dir, config) -> "${i + 1}) ${dir.name} - ${config.description}" }
+        }
+
+        val resolvedValues = resolveValues(variableValues, config.values)
+
+        val targetDir = File("./", resolve(config.path, resolvedValues))
+
+        moduleContentDir.copyRecursively(targetDir, overwrite = true)
+
+        targetDir.walkBottomUp().forEach { file ->
+            val resolvedFileName = resolve(file.name, resolvedValues)
+            if (resolvedFileName != file.name) {
+                file.renameTo(File(file.parent, resolvedFileName))
+            }
+        }
+
+        targetDir.walkBottomUp()
+            .filter { !it.isDirectory }
+            .forEach {
+                val fileContent: String = it.readText()
+                val resolvedContent = resolve(fileContent, resolvedValues)
+                if (resolvedContent != fileContent) {
+                    it.writeText(resolvedContent)
+                }
+            }
+
+            */
+
+    }
+
+    private fun handleArgs() = Action.create {
+        val command = argsResolver.command()
+        nextAction = when(command) {
+            null -> requestTemplateName()
+            is ArgsCommand.Module -> checkTemplate(command.name)
+        }
+    }
+
+    private fun requestTemplateName() = Action.create {
+
+        val templates = templateResolver.availableTemplates()
+
+        templates
+            .mapIndexed { i, template -> "${i + 1}) ${template.name} - ${template.description}" }
             .forEach { println(it) }
 
-        readLine()!!.trim().let {
-            if (!it.all { c -> c.isDigit() }) it
-            else modules[it.toInt() - 1].first.name
-        }
+        var templateName = readLine()!!.trim()
 
-    } else {
-        args[0]
-    }
+        if (templateName.all { c -> c.isDigit() }) {
 
-    val moduleTemplateDir = File(temlatesDir, module)
-    val moduleContentDir = File(moduleTemplateDir, "content")
+            val index = templateName.toInt()
 
-    val moduleConfig = json.parse(ModuleConfig.serializer(), File(moduleTemplateDir, "config.json").readText())
-
-    val config = moduleConfig.copy(values = moduleConfig.values + globalConfig.values)
-
-    val variableValues = mutableMapOf<String, String>()
-
-    val consoleKeyInput = args
-        .mapIndexedNotNull { i, value ->
-
-            if (value.startsWith("-")) {
-
-                val key = value.substring(1)
-
-                if (key.all { it.isLetter() }) key to args[i + 1]
-                else null
-
+            if (index < 1 || index > templates.size) {
+                println("Wrong index, should be in range 1..${templates.size}")
+                return@create
             } else {
-                null
+                templateName = templates[index].name
             }
 
         }
-        .associate { (key, value) -> key to value }
 
-    if (config.variables.isNotEmpty()) {
+        val template = templateResolver.get(templateName)
 
-        config.variables.forEach {
-
-            val consoleValue = consoleKeyInput[it.consoleKey]
-
-            if (consoleValue != null) {
-
-                variableValues[it.name] = consoleValue
-
-            } else {
-
-                print("${it.description}: ")
-                variableValues[it.name] = readLine()!!
-
-            }
-
+        if (template ==  null) {
+            println("Wrong template name should be one of: ${templates.joinToString { it.name }}")
+            return@create
+        } else {
+            proceedTemplate(template)
         }
 
     }
 
-    val resolvedValues = resolveValues(variableValues, config.values)
+    private fun checkTemplate(name: String) = Action.create {
 
-    val targetDir = File("./", resolve(config.path, resolvedValues))
+        val template = templateResolver.get(name)
 
-    moduleContentDir.copyRecursively(targetDir, overwrite = true)
+        nextAction =
+                if (template == null) requestTemplateName()
+                else proceedTemplate(template)
 
-    targetDir.walkBottomUp().forEach { file ->
-        val resolvedFileName = resolve(file.name, resolvedValues)
-        if (resolvedFileName != file.name) {
-            file.renameTo(File(file.parent, resolvedFileName))
-        }
     }
 
-    targetDir.walkBottomUp()
-        .filter { !it.isDirectory }
-        .forEach {
-            val fileContent: String = it.readText()
-            val resolvedContent = resolve(fileContent, resolvedValues)
-            if (resolvedContent != fileContent) {
-                it.writeText(resolvedContent)
-            }
+    private fun proceedTemplate(template: Template) = Action.create {
+
+    }
+
+    class Action(private val run: () -> Unit) {
+
+        var canExecute = true
+            private set
+
+        fun execute() {
+            canExecute = false
+            run()
         }
+
+        companion object {
+
+            fun create(run: () -> Unit) = Action(run)
+
+        }
+
+    }
 
 }
 
