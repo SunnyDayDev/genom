@@ -16,7 +16,7 @@ class ArgsResolver(val args: Array<String>) {
 
     fun command(): ArgsCommand? {
         val nonOption = nonOptions.minBy { (_, value) -> value } ?.takeIf { it.value == 0 } ?: return null
-        return ArgsCommand.Module(name = nonOption.key)
+        return ArgsCommand.Template(name = nonOption.key)
     }
 
     fun option(name: String): String? {
@@ -30,6 +30,6 @@ class ArgsResolver(val args: Array<String>) {
 
 sealed class ArgsCommand {
 
-    data class Module(val name: String): ArgsCommand()
+    data class Template(val name: String): ArgsCommand()
 
 }

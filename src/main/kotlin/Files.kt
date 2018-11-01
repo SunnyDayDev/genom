@@ -19,7 +19,7 @@ class Files(private val config: AppConfig) {
 
     }
 
-    val templates get() = File(root, config.templatesPath)
+    val templates get() = File(config.templatesPath)
 
     fun template(name: String): File? = File(templates, name).takeIf {
         it.exists() && it.isDirectory && File(it, CONFIG_FILE_NAME).exists() && File(it, CONTENT_DIR_NAME).exists()

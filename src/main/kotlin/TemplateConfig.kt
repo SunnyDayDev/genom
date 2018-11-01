@@ -41,5 +41,5 @@ data class Variable(
     val description: String,
     @SerialName("consoleKey")
     @Optional
-    val consoleKey: String? = null
+    val consoleKeys: List<String> = emptyList()
 )
