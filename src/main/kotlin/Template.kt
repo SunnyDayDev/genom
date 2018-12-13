@@ -3,6 +3,8 @@ package me.sunnydaydev.genom
 import kotlinx.serialization.json.JSON
 import java.io.File
 import java.lang.Error
+import java.text.SimpleDateFormat
+import java.util.*
 
 class TemplateResolver(
     private val appConfig: AppConfig,
@@ -99,7 +101,7 @@ class Template(private val rootDir: File, private val config: TemplateConfig) {
 
             return if (match.isNotEmpty()) {
                 !match
-                    .map { it.split(":")[0] }
+                    .map { it.split("|")[0] }
                     .any { allNames.contains(it) }
             } else {
                 true
@@ -142,20 +144,27 @@ class Template(private val rootDir: File, private val config: TemplateConfig) {
 
         if (match.isNotEmpty()) {
 
-            match.mapNotNull {
+            match.forEach {
 
-                val splitted = it.split(":")
+                val splitted = it.split("|")
                 val name = splitted[0]
 
-                if (!values.containsKey(name)) return@mapNotNull null
+                val predefined = PREDEFINED_WORDS.contains(name.toLowerCase())
+                val configurable = values.containsKey(name)
 
-                val modifiers: List<String> = splitted.getOrNull(1)?.split(",") ?: emptyList()
-                Triple(it, name, modifiers)
+                if (!(predefined || configurable)) return@forEach
+
+                val modifiers: List<String> = splitted.drop(1)
+
+                val resolvedValue: String = when {
+                    configurable -> resolveConfigurable(values[name]!!, modifiers)
+                    predefined -> resolvePredefined(name, modifiers)
+                    else -> return@forEach
+                }
+
+                result = result.replace("\${$it}", resolvedValue)
 
             }
-                .forEach { (raw, name, modifiers) ->
-                    result = result.replace("\${$raw}", resolveValue(values[name]!!, modifiers))
-                }
 
         }
 
@@ -163,20 +172,80 @@ class Template(private val rootDir: File, private val config: TemplateConfig) {
 
     }
 
-    private fun resolveValue(value: String, modifiers: List<String>): String {
+    private fun resolvePredefined(name: String,
+                                  modifiers: List<String>): String = when(name.toLowerCase()) {
+        "date" -> resolveDate(modifiers)
+        else -> error("Unknown predefined word.")
+    }
 
-        var resultString = value
+    companion object {
 
-        modifiers.forEach {
-            when(it) {
-                "lowercase" -> resultString = resultString.toLowerCase()
-                "uppercase" -> resultString = resultString.toUpperCase()
-                "capitalize" -> resultString = resultString.capitalize()
-                "decapitalize" -> resultString = resultString.decapitalize()
-            }
+        private val PREDEFINED_WORDS = setOf("date")
+
+        private fun resolveDate(modifiers: List<String>): String {
+
+            val date = Date()
+
+            val format = modifiers.find { it.startsWith("format=") }
+                ?.let { it.split("=")[1] }
+                ?: "dd.MM.yyyy"
+
+            return SimpleDateFormat(format, Locale.getDefault()).format(date)
+
         }
 
-        return resultString
+        private fun resolveConfigurable(value: String, modifiers: List<String>): String {
+
+            var resultString = value
+
+            modifiers.forEach {
+                when(it) {
+                    "spacelineDivider" -> resultString = resultString.toWords()
+                        .let { words ->
+                            if (words.isEmpty()) ""
+                            else words.joinToString(separator = "_")
+                        }
+
+                    "lowercase" -> resultString = resultString.toLowerCase()
+                    "uppercase" -> resultString = resultString.toUpperCase()
+                    "capitalize" -> resultString = resultString.capitalize()
+                    "decapitalize" -> resultString = resultString.decapitalize()
+                }
+            }
+
+            return resultString
+
+        }
+
+        private fun String.toWords(): List<String> {
+
+            val words = mutableListOf<String>()
+
+            val currentWord = mutableListOf<Char>()
+
+            forEach {
+                when {
+                    it.isUpperCase() -> {
+                        val currentLast = lastOrNull()
+                        if (currentLast != null && currentLast.isLowerCase()) {
+                            if (currentWord.isNotEmpty()) {
+                                words.add(currentWord.joinToString(separator = ""))
+                            }
+                            currentWord.clear()
+                        }
+                        currentWord.add(it)
+                    }
+                    else -> currentWord.add(it)
+                }
+            }
+
+            if (currentWord.isNotEmpty()) {
+                words.add(currentWord.joinToString(separator = ""))
+            }
+
+            return words
+
+        }
 
     }
 
